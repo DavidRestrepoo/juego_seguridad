@@ -1408,184 +1408,90 @@ function submitMCQ(lvl){
 }
 
 /* ---- DRAG & DROP ---- */
-// ID del chip actualmente seleccionado por clic
-let selectedChipId = null;
-
-function setSelectedChip(id){
-  // Deselect previous
-  if(selectedChipId){
-    const prev = document.getElementById('chip-'+selectedChipId);
-    if(prev) prev.style.outline = '';
-  }
-  selectedChipId = id;
-  if(id){
-    const chip = document.getElementById('chip-'+id);
-    if(chip) chip.style.outline = '3px solid var(--accent1)';
-  }
-}
-
 function renderDrag(lvl){
-  const area = $('minigame-area');
-  selectedChipId = null;
-  area.innerHTML = `
-    <div style="margin-bottom:12px;font-size:13px;color:var(--muted)">
-      <strong style="color:var(--accent1)">Clic</strong> en un elemento para seleccionarlo,
-      luego <strong style="color:var(--accent1)">clic</strong> en una categoría para asignarlo.
-      También puedes arrastrar y soltar.
-    </div>
-    <div class="drag-container">
-      <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">📦 ELEMENTOS</div>
-        <div class="drag-bank" id="drag-bank"></div>
-      </div>
-      <div class="drag-zones" id="drag-zones"></div>
-    </div>
-  `;
-
-  // Initialize dragState
   dragState = {};
   lvl.banks.forEach(b => { dragState[b.id] = null; });
 
-  // Render zones
-  const zonesEl = $('drag-zones');
-  lvl.zones.forEach(z => {
-    const zEl = document.createElement('div');
-    zEl.className = 'drag-zone';
-    zEl.id = 'zone-' + z.id;
-    zEl.innerHTML = `<span class="drag-zone-label">${z.label}</span><div class="zone-chips" id="zchips-${z.id}" style="display:flex;flex-wrap:wrap;gap:6px"></div>`;
+  const area = $('minigame-area');
+  area.innerHTML = `
+    <div style="margin-bottom:14px;font-size:13px;color:var(--muted)">
+      Para cada elemento, selecciona la categoría correcta:
+    </div>
+    <div id="drag-rows" style="display:flex;flex-direction:column;gap:10px;"></div>
+  `;
 
-    // Drag & drop events
-    zEl.addEventListener('dragover', e => { e.preventDefault(); zEl.classList.add('over'); });
-    zEl.addEventListener('dragleave', e => {
-      if(!zEl.contains(e.relatedTarget)) zEl.classList.remove('over');
-    });
-    zEl.addEventListener('drop', e => {
-      e.preventDefault();
-      zEl.classList.remove('over');
-      const chipId = e.dataTransfer.getData('text');
-      if(chipId) moveChip(chipId, z.id, lvl);
-    });
-
-    // Click-to-assign: clicking zone places selected chip
-    zEl.addEventListener('click', () => {
-      if(selectedChipId){
-        moveChip(selectedChipId, z.id, lvl);
-        setSelectedChip(null);
-      }
-    });
-
-    zonesEl.appendChild(zEl);
-  });
-
-  // Render bank chips
-  const bank = $('drag-bank');
+  const rows = $('drag-rows');
   lvl.banks.forEach(b => {
-    const chip = createChip(b.id, b.text, lvl);
-    bank.appendChild(chip);
+    const row = document.createElement('div');
+    row.id = 'row-' + b.id;
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;';
+
+    // Item label
+    const label = document.createElement('div');
+    label.style.cssText = 'flex:1;min-width:180px;font-size:14px;font-weight:600;';
+    label.textContent = b.text;
+    row.appendChild(label);
+
+    // One button per zone
+    lvl.zones.forEach(z => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-outline';
+      btn.id = 'zb-' + b.id + '-' + z.id;
+      btn.textContent = z.label;
+      btn.style.minWidth = '140px';
+      btn.onclick = () => assignItem(b.id, z.id, lvl);
+      row.appendChild(btn);
+    });
+
+    rows.appendChild(row);
   });
 
+  $('btn-submit').disabled = true;
   $('btn-submit').onclick = () => submitDrag(lvl);
-  checkDragComplete(lvl);
 }
 
-function createChip(id, text, lvl){
-  const chip = document.createElement('div');
-  chip.className = 'drag-chip';
-  chip.id = 'chip-'+id;
-  chip.textContent = text;
-  chip.draggable = true;
-  chip.style.cursor = 'pointer';
+function assignItem(chipId, zoneId, lvl){
+  dragState[chipId] = zoneId;
 
-  // Click: select/deselect chip
-  chip.addEventListener('click', e => {
-    e.stopPropagation();
-    if(selectedChipId === id){
-      setSelectedChip(null); // Deselect if same chip clicked again
+  // Update button styles for this row
+  lvl.zones.forEach(z => {
+    const btn = $('zb-' + chipId + '-' + z.id);
+    if(!btn) return;
+    if(z.id === zoneId){
+      btn.style.background = 'var(--accent2)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--accent2)';
     } else {
-      setSelectedChip(id);
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.borderColor = '';
     }
   });
 
-  // Drag events
-  chip.addEventListener('dragstart', e => {
-    e.dataTransfer.setData('text', id);
-    setSelectedChip(null);
-    chip.classList.add('dragging');
-  });
-  chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
-
-  // Touch support
-  chip.addEventListener('touchstart', handleTouchStart, {passive:true});
-  chip.addEventListener('touchmove', handleTouchMove, {passive:false});
-  chip.addEventListener('touchend', handleTouchEnd);
-  return chip;
-}
-
-// Touch drag support
-let touchChipId = null;
-let touchClone = null;
-function handleTouchStart(e){
-  touchChipId = this.id.replace('chip-','');
-  touchClone = this.cloneNode(true);
-  touchClone.style.cssText = `position:fixed;opacity:.7;pointer-events:none;z-index:300;`;
-  document.body.appendChild(touchClone);
-}
-function handleTouchMove(e){
-  e.preventDefault();
-  if(!touchClone) return;
-  const t = e.touches[0];
-  touchClone.style.left = (t.clientX - 40) + 'px';
-  touchClone.style.top  = (t.clientY - 20) + 'px';
-}
-function handleTouchEnd(e){
-  if(!touchClone) return;
-  const t = e.changedTouches[0];
-  touchClone.remove(); touchClone = null;
-  const el = document.elementFromPoint(t.clientX, t.clientY);
-  const zone = el ? el.closest('.drag-zone') : null;
-  if(zone && touchChipId){
-    const zoneId = zone.id.replace('zone-','');
-    moveChip(touchChipId, zoneId, STATE.currentLevel);
-  }
-  touchChipId = null;
-}
-
-function moveChip(chipId, zoneId, lvl){
-  const chip = document.getElementById('chip-'+chipId);
-  if(!chip) return;
-
-  // Remove from old location
-  if(chip.parentElement) chip.parentElement.removeChild(chip);
-
-  // Update state
-  dragState[chipId] = zoneId;
-
-  // Re-attach to zone
-  const zchips = document.getElementById('zchips-'+zoneId);
-  if(zchips) zchips.appendChild(chip);
-
-  checkDragComplete(lvl);
-}
-
-function checkDragComplete(lvl){
+  // Enable confirm button when all items assigned
   const allPlaced = lvl.banks.every(b => dragState[b.id] !== null);
   $('btn-submit').disabled = !allPlaced;
 }
 
 function submitDrag(lvl){
-  setSelectedChip(null);
   let allCorrect = true;
   lvl.banks.forEach(b => {
-    if(dragState[b.id] !== b.correct_zone) allCorrect = false;
-    const chip = document.getElementById('chip-'+b.id);
-    if(chip){
-      chip.style.background = dragState[b.id] === b.correct_zone ? 'var(--accent3)' : 'var(--danger)';
-      chip.style.cursor = 'default';
-      chip.draggable = false;
-      chip.style.outline = '';
-      chip.onclick = null;
+    const correct = dragState[b.id] === b.correct_zone;
+    if(!correct) allCorrect = false;
+
+    // Color the selected button green/red
+    const selectedBtn = $('zb-' + b.id + '-' + dragState[b.id]);
+    if(selectedBtn){
+      selectedBtn.style.background = correct ? 'var(--accent3)' : 'var(--danger)';
+      selectedBtn.style.borderColor = correct ? 'var(--accent3)' : 'var(--danger)';
     }
+    // Disable all buttons in this row
+    lvl.zones.forEach(z => {
+      const btn = $('zb-' + b.id + '-' + z.id);
+      if(btn) btn.disabled = true;
+    });
   });
+
   $('btn-submit').disabled = true;
   showFeedback(lvl, allCorrect);
 }
