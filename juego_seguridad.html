@@ -1604,7 +1604,14 @@ function showFeedback(lvl, isCorrect){
     if(idx < worldLevels.length - 1){
       startLevel(worldLevels[idx+1]);
     } else {
-      renderMap(STATE.currentWorld);
+      // Last level of the world — advance to next world
+      const worldIdx = WORLDS.findIndex(w => w.id === STATE.currentWorld.id);
+      if(worldIdx < WORLDS.length - 1){
+        notify('🌍 ¡Zona completada! Avanzando a la siguiente...', 'var(--accent3)');
+        renderMap(WORLDS[worldIdx + 1]);
+      } else {
+        renderIntro();
+      }
     }
   };
 
